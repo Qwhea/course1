@@ -8,7 +8,6 @@ import time
 import requests
 from tqdm import tqdm
 
-
 REQUEST_TIMEOUT = 10
 GROUP = 'PD142'
 JSON_FILE = 'info.json'
@@ -29,7 +28,6 @@ help_text_dog = """
 Выбрать породу: select
 Выйти: exit 
 """
-
 
 class ApiKey:
     def __init__(self):
@@ -194,7 +192,6 @@ def gen_cat(api_key, word):
                 print(f"\n Ошибка проверки статуса: {e}")
                 break
 
-
 def autogen_cat(api_key, language, count_cats):
     if language.lower() not in ['ru', 'en']:
         logging.error('Неверный язык')
@@ -300,8 +297,6 @@ def reserve_dog(api_key, dog, subbreed=''):
                 pbar.set_postfix_str("ошибка сети")
                 print(f"\n Ошибка проверки статуса: {e}")
                 break
-
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
