@@ -3,16 +3,14 @@ import logging
 import os
 import random
 import sys
-
-#import setting
+import time
 import requests
+
 
 group = 'PD142'
 json_file = 'info.json'
-work = True
 
-
-help = '''
+help_text = '''
 Ввести API_KEY: key
 Сгенерировать котика: gen
 Сгенерировать много котиков: autogen
@@ -37,11 +35,11 @@ class ApiKey:
             self.__api_key = ''
             logging.error('Неверный API ключ')
 
-
     def is_valid(self):
         url = 'https://cloud-api.yandex.net/v1/disk/resources'
         params = {
-        'path': '/'}
+            'path': '/'
+        }
         headers = {
             'Authorization': self.__api_key
         }
@@ -50,43 +48,24 @@ class ApiKey:
                 return True
             else:
                 return False
-        except:
+        except requests.RequestException as e:
+            logging.error(f'Ошибка запроса: {e}')
             return False
 
-
-
-
-def get_upload_link(API_KEY, word):
-    url = 'https://cloud-api.yandex.net/v1/disk/resources/upload'
-    params = {
-        'path': f'{group}/{word}.jpg',
-        'overwrite': 'true'
-    }
-    headers = {
-        'Authorization': API_KEY
-    }
-    if api_key.is_valid():
-        try:
-            request = requests.get(url, params=params, headers=headers)
-        except:
-            logging.error(f'Ошибка запроса: {request.status_code}')
-
-    return request.json()['href']
-
-def write_info(API_KEY, word):
-
+def write_info(api_key, word):
     url = 'https://cloud-api.yandex.net/v1/disk/resources'
     params = {
         'path': f'{group}/{word}.jpg',
         'fields': 'path,size'
     }
     headers = {
-        'Authorization': API_KEY
+        'Authorization': api_key
     }
     try:
         request = requests.get(url, params=params, headers=headers)
-    except:
-        logging.error(f'Ошибка запроса: {request.status_code}')
+        request.raise_for_status()
+    except requests.RequestException as e:
+        logging.error(f'Ошибка запроса: {e}')
     if os.path.exists(json_file):
         with open(json_file, 'r', encoding='utf-8') as f:
             try:
@@ -96,73 +75,90 @@ def write_info(API_KEY, word):
     else:
         data_list = []
 
-    new_data = {'path': request.json()['path'], 'size': request.json()['size']}
+    new_data = {
+        'path': request.json()['path'],
+        'size': request.json()['size']
+    }
     data_list.append(new_data)
 
     with open(json_file, 'w', encoding='utf-8') as f:
         json.dump(data_list, f, ensure_ascii=False, indent=2)
 
-def gen_cat(API_KEY,word):
-    url = f'https://cataas.com/cat/cute/says/{word}'
-    try: request = requests.get(url)
-    except: logging.error(f'Ошибка запроса: {request.status_code}')
-
-    # with open(f'{word}.jpg', 'wb') as f:
-    #     f.write(request.content)
-    #with open(f'{word}.jpg', 'rb') as f:   #Это если нужно сохранить копию локально и потом загрузить на диск
-
-    headers = {
-        'Authorization': API_KEY
+def gen_cat(api_key, word):
+    url =  'https://cataas.com/cat/cute/says/'
+    url_upload = 'https://cloud-api.yandex.net/v1/disk/resources/upload'
+    params = {
+        'path': f'{group}/{word}.jpg',
+        'overwrite': 'true',
+        'url' : f'{url}{word}'
     }
+    headers = {
+        'Authorization': api_key
+    }
+    try:
+        response = requests.post(url_upload, params=params, headers=headers)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        sys.exit(f'Ошибка загрузки изображения: {e}')
+    answer = response.json()['href']
 
-    try: r_upload = requests.put(get_upload_link(API_KEY, word), headers=headers, data=request.content)
-    except:
-        if r_upload.status_code != 201:
-            if r_upload.status_code == 401:
-                sys.exit('Неверный API ключ')
-            else:
-                sys.exit(f'Ошибка запроса: {r_upload.status_code}')
-    print(f'Котик {word} успешно загружен')
-    write_info(API_KEY,word)
+    while True:
+        response = requests.get(answer, headers=headers)
+        status = response.json()['status']
 
-def autogen_cat(API_KEY,language,count_cats):
-    if language.lower() not in ['ru','en']:
+        if status == 'success':
+            print(f'Котик "{word}" успешно загружен')
+            write_info(api_key, word)
+            break
+        elif status == 'in-progress':
+            print('Загрузка...')
+            time.sleep(1)
+            continue
+        else:
+            error = response.json()['message']
+            print(f'Ошибка загрузки: {error}')
+            break
+
+
+def autogen_cat(api_key, language, count_cats):
+    if language.lower() not in ['ru', 'en']:
         logging.error('Неверный язык')
     elif not count_cats.isdigit():
         logging.error('Количество должно быть числом')
     else:
+        dict_dir = 'dict'
+        dict_path = os.path.join(dict_dir, f'{language.lower()}.txt')
         for i in range(int(count_cats)):
             if language.lower() == 'ru':
-                with open(f'{os.path.abspath(os.curdir)}/dict/RUS.txt') as f:
+                with open(dict_path) as f:
                     word = random.choice(f.read().splitlines())
             elif language.lower() == 'en':
-                with open(f'{os.path.abspath(os.curdir)}/dict/ENG.txt') as f:
+                with open(dict_path) as f:
                     word = random.choice(f.read().splitlines())
-            gen_cat(API_KEY,word)
-
-
+            gen_cat(api_key, word)
 
 if __name__ == '__main__':
     api_key = ApiKey()
-    while work:
-
-        print(help)
-        choiceCommand = input('Введите команду: ')
-        if choiceCommand == 'key':
+    while True:
+        print(help_text)
+        choice_command = input('Введите команду: ')
+        if choice_command == 'key':
             api_key.key = input('Введите API_KEY: ')
 
-        elif choiceCommand == 'gen':
+        elif choice_command == 'gen':
             if api_key.is_valid():
-                gen_cat(api_key.key, input('Введите слово: '))
+                gen_cat(
+                    api_key.key,
+                    input('Введите слово: '))
             else:
                 print('API_KEY не установлен/неправильный')
 
-        elif choiceCommand == 'autogen':
+        elif choice_command == 'autogen':
             if api_key.is_valid():
                 autogen_cat(api_key.key,input('Выберите язык (RU/EN): '), input('Введите количество случайных котиков: '))
             else:
                 print('API_KEY не установлен/неправильный')
 
-        if choiceCommand == 'exit':
+        if choice_command == 'exit':
             print('Выход')
-            work = False
+            break
